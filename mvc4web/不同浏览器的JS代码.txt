@@ -1,4 +1,6 @@
-﻿var innerWidth,innerHeight;
+﻿
+
+var innerWidth,innerHeight;
 
 //IE9及更新版本浏览器
 if(typeofwindow.innerWidth!=="undefined")
