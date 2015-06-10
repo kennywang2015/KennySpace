@@ -1,0 +1,134 @@
+﻿var innerWidth,innerHeight;
+
+//IE9及更新版本浏览器
+if(typeofwindow.innerWidth!=="undefined")
+{
+	innerWidth=window.innerWidth;
+	innerHeight=window.innerHeight;
+}
+else
+{
+	innerWidth=document.documentElement.clientWidth,
+	innerHeight=document.documentElement.clientHeight
+}
+
+jQuery 在DOM操作和web之间使用特定的客户端开发框架作为隔离层。
+jQuery 相同的函数用来设置和读取属性值，唯一的区别就是是否带有新值参数。
+
+jQuery 选择器  通过支持惯例优于配置原则就可以使用很少的代码来遍历DOM。
+#ID表示ID选择器。  .classname表示class样式选择器  
+链式调用 chaining of calls。
+">"表示父子关系。 可以根据此过滤别的元素。
+$(".normal > span").text("Welcome to jQuery!");
+$(".normal > span").contains("Welcome!").text("Welcome to jQuery");
+
+.contains()筛选出包含特定文本的元素。如果有多个span，没有id和classname，唯一区分的方式就是内容。
+
+.click()来附加事件处理函数。
+$(function) 告诉浏览器在加载dom的时候附加事件处理函数。DOM树是从上往下加载的。
+$(function(){....}) 是jQuery的编码方式
+.append() 添加元素集合。
+.remove();//删除元素集合。
+.prepend() 插入到匹配元素的头部
+.before() 插入到匹配元素之前
+.after() 之后
+.html() 替换匹配元素内部的html代码。
+
+AJAX   核心  XmlHttpRequest对象。
+
+XmlHttpRequest 实现ajax的代码的问题在微软webcast课程“WCF与ajax开发实践1 ajax基本原理与纯ajsx示例”
+
+#region 同步请求 必须等待返回结果后再进行处理工作。
+//实例化xmlhttprequest
+var xhr=new XMLHttpRequest();
+
+//使用get方法请求页面
+xhr.open("GET",urlpath,false);  //同步  true异步 
+
+//发送请求
+xhr.send(null);
+
+if(xhr.status===200){
+	//只支持firefox，chrome，ie8+
+	console.log(xhr.responseText);
+}
+else
+{
+	//error
+	console.log("Error occurred: ",xhr.statusText);
+}
+#endreigon
+
+异步机制的特性让浏览器不需要等待，可以继续执行代码。因为请求可能不完整，所有可能出错。
+为了处理这种情况，必须制定 回调函数---当收到请求时立即执行。
+
+#region 异步请求 
+//实例化xmlhttprequest
+var xhr=new XMLHttpRequest();
+
+//使用get方法请求页面
+xhr.open("GET",urlpath,true);  
+
+//添加回调函数
+xhr.onreadystatechange=function(evt){
+	//因为请求状态不同，readystate的值会改变 这个函数会在每次变化的时候调用，readystate=4意味着处理完成
+	if(xhr.readystate===4)
+	{
+		if(xhr.status===200){
+			console.log(xhr.responseText);
+		}	
+		else
+		{
+		//error
+		console.log("Error occurred: ",xhr.statusText);
+		}
+	}
+}
+
+//必须在send之前设置回调函数，否则无法调用。
+//发送请求
+xhr.send(null);
+#endreigon
+
+AJAX  jQuery $.ajax() 默认就是Get和异步请求方式。
+
+$.ajax(urlpath)
+	.done(function(data){
+		console.log(data);
+	})
+	.fail(funcation(xhr){
+		console.log("Error occurred: ",xhr.statusText);
+	});
+第一行代码指定了请求数据的地址，接着是请求成功和错误是的回调函数（jquery通过检查readystate和状态码实现。）
+
+#region 规范请求
+
+$.ajax({
+	url:urlpath,
+	async:true,
+	type:"GET",
+	done:function(data){ //200
+		console.log(data);
+	},
+	fail:funcation(xhr){
+		console.log("Error occurred: ",xhr.statusText);
+	}
+});
+
+#endreigon
+
+
+可以在appsetting中设置是否开启mvc的客户端验证支持功能。key="ClientValidationEnabled"
+
+服务器验证需要回传到服务器，如果有问题，还需要将消息回传到客户端，然后进行页面刷新后显示给用户。
+
+启用了javascript客户端验证后，mvc就会在data-val-存储对应的验证条件和提示信息。jQuery 验证插件会使用这些只来确定验证规则和对应的错误提示信息。 会给表单的onsubmit添加事件处理函数。
+
+Unobtrusive Javascript 分离javascript 即不需要在页面里嵌入jquery验证代码，也不需要在页面里绑定客户端验证事件。相反，代码会自动添加onsubmit事件及验证逻辑，jquery.validate.js   jquery.validate.unobtrusive.js文件的一部分。
+
+
+
+
+
+
+	
