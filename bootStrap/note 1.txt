@@ -1,0 +1,4 @@
+﻿1.meta标签  设置宽度自适应，并且完全不缩放。
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<nav> 导航标签。
