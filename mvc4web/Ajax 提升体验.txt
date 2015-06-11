@@ -1,0 +1,151 @@
+﻿Ajax技术首先异步请求数据，然后使用返回的内容来更新部分页面。
+一种是服务端生成的html代码，可以直接嵌入到页面里；
+一种就是原始的序列化数据，客户端javascript可以用来生成html代码或者更新浏览器中的压敏啊。
+
+jQuery.load()请求服务端内容来更新div元素。
+	$("#container").load('ajax_content.html')
+	
+渲染部分视图	mvc会把部分渲染当成其他请求一样看待---请求被路由到特定的控制器，控制器执行特定的操作逻辑代码
+二者的区别在于请求结束渲染视图时：通常的操作方法是使用Controller.View() 帮助方法返回ViewResult.
+	而部分渲染需要调用Controller.Partial()帮助方法来返回PartialViewResult对象。与ViewResult类似，除了PartialViewResult只渲染包含视图的内容，不会渲染外围布局。
+	
+不同的Auction返回的视图和AJAX返回的部分视图。
+渲染普通视图
+控制器制作AuctionsController.cs调用Controller.View()方法：
+	public class AuctionsController:Controller
+	{
+		public ActionResult Auction(long id)
+		{
+			var db=new DataContext();
+			var auction = db.Auctions.Find(id);
+			
+			return View("Auction",auction);
+		}
+	}
+	
+对应的Auction视图 Auction.cshtml
+@model Auction
+
+渲染部分视图   更新部分视图。
+Controller.PartialView()来创建PartialViewResult,取代Controller.View()生成的ViewResult对象
+
+注意：除了将View()换成PartialView()方法。PartialViewResult可以使用ViewResult依赖的视图。事实上，PartialViewResult和ViewResult几乎是等价的，只有一点不同，
+PartialViewResult只渲染html标签的内容，不包含外围布局和模板页内容。
+部分视图和正常的视图一样，任何语法都可以使用比如Razor语法，而且可以完全使用asp.net mvc的功能。比如HTML帮助类。
+因为部分视图不包含外围布局，所以也许要包含一些依赖，比如CSS或者js。要直接在部分视图中引用，而不是在布局文件中。
+@Html.Partial("Auction",auction)
+
+
+客户端渲染方法必须具备两个条件：服务端可以产生序列化的数据，客户端知道如何把该数据转为html代码。
+
+序列化ajax请求数据。
+
+JSON数据结构：名值对集合以及有序值列表。  JsonResult 可以接受可序列化为json的模型对象。
+为了让控制器操作支持json格式的ajax请求，可直接使用Controller.Json()方法来创建包含可被序列化对象的JsonResult.
+
+public ActionResult JsonAuction(long id)
+{
+	vardb=new DataContext();
+	var auction=db.Auctions.Find(id);
+	
+	return Json(auction, JsonRequestBehavior.AllowGet);
+}
+
+使用JsonResquestBehavior防止JSON劫持
+	Json()方法的第二个参数JsonRequestBehavior.AllowGet 它通过mvc框架接收Get方式的Http请求，返回Json格式的数据。
+	
+	这个JsonRequestBehavior.AllowGet参数是必须的，因为默认情况下，mvc不允许对get方式的http请求返回json数据，这样可以避免签字的json劫持风险。
+	此漏洞采用许多浏览器处理js <script>标记的方式，如果请求中的数据包括一个json数组，则可以导致公开敏感信息。
+漏洞：不要给不可知的HTTP get请求返回Json数据。因此，在返回敏感数据时mvc允许通过 JsonRequestBehavior.AllowGet 设置来允许这种不安全的方式返回json数据。
+
+当需要json应答敏感信息时，可以在控制方法上添加HttpPostAttribute属性限制Post才提交请求。
+
+$.ajax()调用特定的url。返回数据 success函数的第一个参数 包含返回的反序列化对象。
+function updateAuctionInfo(auctionId){
+	$.ajax({
+		url:"/Auctions/JsonAuction/"+auctionId,
+		success:function(result){
+			$('#Title').val(result.Title);
+			$('#Description').val(result.Description);
+			$('#CurrentPrice').html(result.CurrentPrice);
+		}
+	})
+}
+
+
+客户端模板：Mustache模板语法来定义客户端html标签，使用mustache.Js 库在浏览器里解析和执行客户端模板。
+	js库使用客户端模板标签，并在函数里解析json生成html标签。
+	大部分客户端模板提供了比简单html容器控件更强大的功能。
+	其次就是编译客户端模板，或者把客户端模板html转换为可执行的js函数。
+编译模板代价最大，理想的方法是在保存文件以后立即编译。可以理解使用编译后的模板，不需要等待编译过程。
+
+	text/x-template MIME类型不限制返回数据格式，即可以使用无效的多媒体MIME类型。
+	浏览器回去忽略自己无法识别的标签，所以先把模板标签包装在scirpt标签里，然后把MIME修改为invalid 比如text/x-template 
+	，最后会组织浏览器把数据渲染成html页面。
+	
+
+重用跨Ajax和非Ajax请求逻辑代码：
+	为了减少重复的逻辑代码，mvc提供了Request.IsAjaxrequest()扩展方法，他可以帮助我们确定当前的请求是否是ajax请求。
+	可以使用这个方法来动态生成返回的数据格式。
+	Request.IsAjaxrequest()通过检查请求消息的头部XRequested-With来确定是否是XMLHttpRequest，大部分浏览器都会自动给AJAX请求添加的字段。
+	希望mvc发送ajax请求，只需要在XmlHttpRequest的Http消息头里添加X-Requested-with的值即可。
+
+没有提供类型Request.IsAjaxrequest()方法来判断请求是否是json数据。但是稍微修改就可以轻易实现自定义逻辑。
+在控制器操作方法里添加一个参数来指定是否返回json数据。
+public static class JsonRequestExtensions
+{
+	public static bool IsJsonRequest(this HttpRequestBase request)
+	{
+		return string.Equals(request["format"],"json");
+	}
+}
+
+部分视图渲染和判断json请求返回数据逻辑代码放一个控制器，就可以实现返回不同结果的灵活方法。Request.IsAjaxrequest()
+
+mvc提供了完美的机制在多个控制器操作上重用统一逻辑规则：操作过滤器。
+代码移植到操作过滤器，就可以在其他控制器上重用这个过滤器。
+创建一个类继承System.Web.Mvc.ActionFilterAttribute类型，重写OnActionExecuted()方法来实现。可以再操作完毕之后来修改结果，但是需在操作结果修改之前：
+在ajax或json请求进来时修改操作结果：
+public class MultipleResposeFormatsAttribute: ActionFilterAttribute
+{
+	public override void OnActionExecuted(ActionExecutedContext filterContext)
+	{
+		var request = filterContext.HttpContext.Request;
+		var viewResult = filterContext.Result as ViewResult;
+		
+		if(viewResult == null)
+			return;
+			
+		if(request.IsAjaxRequest())
+		{
+			filterContext.Result = new PartialViewResult
+			{
+				TempData = viewRequest.TempData,
+				ViewData = viewRequest.ViewData,
+				ViewName = viewRequest.ViewName	
+			};
+		}
+		else if (Request.IsJsonRequest())
+		{
+			filterContext.Result = new JsonResult{
+				Data = viewRequest.Model
+			};
+		}
+	}
+}
+可以使用MultipleResposeFormatsAttribute属性标记任意操作方法，可以动态确定返回的结果类型是视图、部分视图或JSon。
+
+发送数据到服务器：  通过URL查询参数和通过表单提交数据（Http get和post方法）。
+$.post()发送json格式数据的请求消息。 控制器操作并不需要做什么特别处理，json格式的数据会自动映射到操作方法的参数上。
+整个控制器操作方法就是执行逻辑代码以及返回结果。
+
+
+提交复杂的json对象：
+
+默认的json模型绑定逻辑包含一个重要的限制：0-1方法。就是说，工厂期望整个应答消息只包含json格式的数据，不允许部分字段是json格式的数据，部分字段是其他格式的数据。
+
+
+page：132
+
+
+
