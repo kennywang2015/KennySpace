@@ -130,9 +130,42 @@ IOC
 启动程序项目负责管理使用Ninject注册的模块，要检查的最重要的模块就是BindingModule。注意bootstrapper类的Start()、Stop()方法。
 这些方法需要在Global.asax应用程序启动时调用。
 
-mvc框架严重依赖控制反转原则。包含了县城的控制器工厂类，可以通过拦截输入的请求、读取mvc路由信息来创建特定的控制器，最后根据路由定义来调用控制器的方法。Ioc的另一个主要应用领域是管理应用程序的视图引擎，以及控制控制器和其相应的视图之间的执行过程。
+mvc框架严重依赖控制反转原则。包含了现成的控制器工厂类，可以通过拦截输入的请求、读取mvc路由信息来创建特定的控制器，最后根据路由定义来调用控制器的方法。Ioc的另一个主要应用领域是管理应用程序的视图引擎，以及控制控制器和其相应的视图之间的执行过程。
 
 只有在使用自定义Ioc容器重写默认依赖解析器dependency resolver扩展asp.net框架来获取直接控制asp.net mvc管理依赖和创建对象的权利时，才能体现Ioc。
 重写asp.net mvc默认的依赖解析器和实现IDependencyResolver接口一样简单，而且可以使用asp.net mvc框架注册自定义依赖解析器。
 
-page-115
+如何使用Ninject Ioc来创建一个自定义依赖解析器。首先，实现IDependencyResolver接口，然后通过调用构造函数来传递IKernel（Ninject的Ioc容器类）的子类实例。
+public class CustomDependencyResolver: IDependencyResolver
+{
+	private readonly Ninject.IKerenl _kernel;
+	
+	public CustomDependencyResolver(Ninject.IKerenl kernel)
+	{
+		_kernel=kernel;
+	}
+	
+	public object GetService(Type serviceType)
+	{
+		return _kernel.TryGet(serviceType);
+	}
+	
+	public IEnumerable<object> GetServices(Type serviceType)
+	{
+		return _kernel.GetAll(serviceType);
+	}
+}
+其次，通过调用System.Web.Mvc.DependencyResolver类上的静态方法SetResolver()来实现注册：
+Ninject.IKerenl kernel=new Ninject.StandardKernel();
+DependencyResolver.SetResolver(new CustomDependencyResolver(kernel));
+
+大多数IoC框架在创建和解析依赖关系之前都要求配置容器。
+
+上边的代码必须先告诉StandardKernel，需要他来管理类和接口。使用Ninject框架，可以使用Bind<T>()方法来实现。
+需要使用IErrorLogger时，就可以告诉Ninject调用具体实现类ErrorLogger：
+//使用容器注册服务。
+kernel.Bind<IErrorLogger>().To<ErrorLogger>();
+
+DRY don't repeat yourselef  不要重复你自己。找到相同和相似的代码，并且抽象他们，不要出现重复的代码。
+
+可以创建自定义操作过滤器ActionFilter来处理 大量控制器中包含的代码几乎完全相同。
