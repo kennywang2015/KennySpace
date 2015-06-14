@@ -143,9 +143,244 @@ $.post()发送json格式数据的请求消息。 控制器操作并不需要做�
 提交复杂的json对象：
 
 默认的json模型绑定逻辑包含一个重要的限制：0-1方法。就是说，工厂期望整个应答消息只包含json格式的数据，不允许部分字段是json格式的数据，部分字段是其他格式的数据。
+表面上，给模型绑定提交json对象看起来不错，其实很多弊端。
+1.客户端必须动态构建整个消息，而且必须知道对象的每个字段，html不再是个窗体，而是js逻辑代码手机数据的方式。
+2.服务器只会以Content Type内容类型为“application/json”的json请求消息，对标准的httpget请求没用，只对包含正确头部消息类型的ajax请求有效。
+3.只有一个字段有效，默认的绑定逻辑情况下，模型绑定器会认为整个对象无效。
+
+可以通过自定义模型绑定器来替换内置的json绑定模型逻辑。
+JsonModelBinder与Json值提供者工厂 不同，它允许在json数据里包含别的字段，而不强制整个消息为json格式。因为模型绑定器分别处理每个属性，所以可以混用不同的字段，部分字符支持json数据，部分字段
+可以不支持json数据。
+大部分模型自定义绑定器，json模型绑定器继承DefaultModelBinder，所以可以在不包含json数据是回退到模型的绑定逻辑。
+
+选择模型绑定器，ModelBinderDictionary.GetBinder()已经泄露mvc框架查找模型绑定器的秘密：
+private IModelBinder  GetBinder(Type modelType,IModelBinder fallbackBinder)
+{
+	//为次类型查询绑定器，使用优先顺序
+	1.提供者返回的绑定器
+	2.全局表里注册的绑定器
+	3.类型上定义的绑定器
+	4.提供的回退绑定器
+
+}
 
 
-page：132
+替换默认（回退）绑定器
+	如果没有其他配置，mvc为所有的模型使用DefaultModelBinder。可以通过设置ModelBinders.Binders.DefaultBinder属性将新绑定器替换为默认模型绑定器
+	protected void Application_Start()
+	{
+		ModelBinders.Binders.DefaultBinder = new JsonModelBinder();  //JsonModelBinder将会为新的默认绑定器，并处理所有指定绑定器的所有模型。
+		//...
+	}
+
+为模型使用自定义标记属性
+	或许制定模型绑定器的最优雅方式就是使用抽象system.web.mvc.custommodelbinderattribute声明方式来标记类和属性。虽然可以将这种方式用于任意想要的模型，但是最好还是和请求模型绑定，因为模型绑定本身就是请求模型而生的。
+
+为了使用CustomModelBinderAttribute方法，需要先创建子类继承。
+[AttributeUsage(AttributeTargets.Class|
+	AttributeTargets.Enum|
+	AttributeTargets.Interface|
+	AttributeTargets.Parameter|
+	AttributeTargets.Struct|
+	AttributeTargets.Property,
+	AllowMultiple=false,Inherited=false)]
+public class JsonModelBinderAttribute: CustomModelBinderAttribute
+{
+	public ovveride IModelBinder GetBinder()
+	{
+		return new JsonModelBinder();
+	}
+}
 
 
+public class CreateProductRequest
+{
+	//.....
+	
+	[Required]
+	[JsonModelBinder]
+	public IEnumerable<CurrencyRequest> UnitPrice {get;set;}
+}
 
+
+使用JsonModelBinderAttribute标记UnitPrice，应该使用JsonModelBinder（JsonModelBinderAttribte.GetBinder()创建） 来绑定UnitPrice属性。
+这还要在没有全局处理器或者模型绑定器提供者时才使用，注意优先级。
+
+
+注册全局绑定器
+	注册绑定器跟设置默认一样，也可以为单独的类型注册模型绑定器。
+		mvc框架为每个Currency模型使用JsonModelBidner：
+		ModelBinders.Binders.Add(typeof(Currency),newJsonModelBinder());
+		
+		
+高效收发Json数据
+	Json是构建基于ajax的Riaweb应用的基础模块，所以如何正确使用json非常重要。
+	最具有挑战性问题就是json的序列化。复杂对象通常包含很多关系，或者依赖数据访问技术，比如EF。当使用Json时，可能出现无法序列化对象的情况，这是就会返回500状态码，表示服务器内部情况。
+	另外缺点就是对复杂对象，js处理可能有问题。
+	最好的方式就是定义轻量级的实体类型，叫数据转换对象DTO，可方便进行类型转换。DTO可以使用简单的数据结构，并且可避免复杂的层级关系。
+	DTO类应该只包含应用或者请求需要的字段，如果多个DTO类也是可以的，甚至对同一个实体，每个不同的请求返回不同的的结果。
+	DTO例子，简单的数据结构方便js操作。而且，由于DTO体积更小，所以它比Auction模型更适合合作为ajax的应答消息。
+	public class AuctionDto
+	{
+		public string Title{get;set;}
+		public string Description{get;set;}
+	}
+	
+跨域ajax请求
+	默认情况下，浏览器值允许来自本站的请求。这种限制可以避免很多安全问题，比如跨站脚本攻击xss。有时候，应用确实需要与外部托管的Rest api交互，比如Twitter或者Google。
+	外部的web应用必须支持jsonp请求或者跨站资源共享Cross-Origin Resource Sharing， CORS  mvc不直接支持，要实现这种功能需要一些代码和配置工作。
+
+JSONP
+	Json with Padding  利用跨站请求伪造基础，允许ajax跨域调用。
+	1.客户端创建接受jasonp应答消息的js函数，
+	2.客户端动态为dom添加script标签，欺骗浏览器误任务它正在包含一个真正的脚本，然后利用浏览器允许script引用外部资源的后门。
+	3.script制定外部jsonp服务地址，然后指定第一步毁掉的函数名称
+		<script href="http://other.com/auctions/1234?callback=updateAuction" />.
+	4.服务器像处理别的json请求一样处理请求。一个重要的区别就是：它不是直接在应答消息里返回json对象，而是在客户端里毁掉函数名里包装对象。
+		注意：服务器不知道也不关心回调函数是什么，只知道唯一的职责就是调用函数，并假定客户端一定存在这个函数
+		updateAuction({
+			"Title":"XBOX 360",
+			"Description":"XXXXXXX",
+			"Binds":[
+				{
+					"Amount":"$200.00",
+					"Time":"01/12/2021"
+				},
+				{
+					"Amount":"$200.00",
+					"Time":"01/12/2021"
+				},
+				{
+					"Amount":"$200.00",
+					"Time":"01/12/2021"
+				}
+			]
+		});
+	注意的是，Jsonp方法是一种完全不同的c/s数据交换方法。回调的函数里包含原声的json数据，而不是直接返回json数据（正常的ajax请求）。因此在客户端访问返回数据的方法只有jsonp回调函数里实现。
+	jsonp回调函数的参数里就包含了序列化的json数据。jsonp应答消息可能在执行回调之前执行其他逻辑代码： 在西安市时间之前把格式转换为用户端额当地时间：
+		updateAuction({
+			"Title":"XBOX 360",
+			"Description":"XXXXXXX",
+			"StartTime":"01/12/2021",
+			"EndTime"::"01/12/2021",
+			"Binds":[
+				{
+					"Amount":"$200.00",
+					"Time":"01/12/2021"
+				},
+				{
+					"Amount":"$200.00",
+					"Time":"01/12/2021"
+				},
+				{
+					"Amount":"$200.00",
+					"Time":"01/12/2021"
+				}
+			]
+		});
+		/*转换为本地时间*/
+		function toLocalTime(src){
+			return new Date(src+" UTC").toString();
+		}
+		
+		bid.StartTime=toLocalTime(bid.StartTime);
+		bid.EndTime=toLocalTime(bid.EndTime);
+		
+		for(var i=0;i<data.Binds.Leng;i++){
+			var bid=data.Binds[i];
+			bid.Time=toLocalTime(bid.Time);
+		}
+		
+		/*执行回调*/
+		updateAuction(data);
+		
+	
+发送Jsonp请求
+	jQuery  $.ajax方法为jsonp请求提供了完美的支持。要做的就是在datatype和jsonpCallback里制定jsonp的数据类型以及指定客户端回调函数的名字。
+	function updateAuction(result){
+		var message = result.Title+": $"+result.CurrentPrice;
+		$('#Result').html(messsage);
+	}
+	
+	$.ajax({
+		type:"GET",
+		url:"http://xxxxxxx",
+		dataType:"jsonp",
+		jsonpCallback:"updateAuction"
+	})
+注意，他是查询字符串参数，而不是使用.success()和.error()注册时间的js函数，回调函数必须是全局的，唯一的函数，否则jsonp脚本无法执行这个回调函数。
+
+mvc控制器操作添加jsonp支持
+	mvc并没有提供内置支持，所以要想在操作方法会里使用jsonp，就要自己实现代码。jsonp返回的结果数据比mvc框架的JsonResult操作结果更新。
+	支持jsonp的最好方法也许就是创建自定义的ActionResult。
+	
+	自定义Jsonp操作结果
+	
+	using System.Web.Mvc;
+	
+	public class JsonpResult : JsonResult
+	{
+		public string Callback {get;set;}
+		
+		public JsonpResult()
+		{
+			JsonRequestBehavior = JsonRequestBehavior.AllowGet;
+		}
+		
+		public override boid ExecuteResult(ControllerContext context)
+		{
+			var httpContext = context.HttpContext;
+			var callback = Callback;
+			
+			if(stirng.IsNullOrWhiteSpace(callback))
+				callback = httpContext.Request["callback"];
+				
+			httpContext.Response.Write(callback+"(");
+			base.ExecuteResult(context);
+			httpContext.Response.Write(");");
+		}
+	}
+	
+	JsonpResult硬编码把JsonRequestBehavior属性设置为了JsonRequestBehavior.AllowGet。因为，根据定义，所有jsonp请求必须是Get请求。
+	
+	每个Jsonp请求都会存在安全漏洞，所以必须避免通过jsonp发送敏感信息。
+	
+	为了应答jsonp请求，只需要返回JsonResult对象：
+	public ActionResult Auction(long id)
+	{
+		var db=new DataContext();
+		var auction = db.Auctions.Find(id);
+		
+		return new JsonpResult{Data=auction};
+	}
+	
+
+启用跨站资源共享
+	跨站ajax调用的首先方法就是跨站资源共享CORS。 与jsonp不同，cors不会利用安全漏洞，而且他是有特殊的http消息头告诉浏览器服务允许跨域ajax调用，避免黑客。
+	让cors方法更加简单，因为这样就不再需要js回调函数或者自定义操作结果类。
+	
+	启用cors支持，只需要给每个需要cors支持的请求消息设置Access-Control-Allow-Origin header值。可以把需要访问的域名设置为白名单，或者使用* 授权访问域名。
+	HttpContext.Response.AppendHeader(“Access-Control-Allow-Origin”，“*”);
+	别的办法，可以给网站的全部请求消息添加Http消息头，需要在配置文件
+	<system.webServer>
+		<httpProtocol>
+			<customHeaders>
+				<add name="Access-Control-Allow-Origin" value="*" />
+			</customHeaders>
+		</httpProtocol>
+	</system.webServer>
+	
+	接着发送普通的jquery $.ajax()即可
+	$.ajax({
+		type:"GET",
+		url:urlpath,
+		dataType:"json"
+		success:function(result){
+			var message = result.Title;
+		},
+		error:function(XMLHtttpRequest, textStatus, errorThrown){
+			
+		}
+	});
+	
+	添加完cors的支持代码，其实就是实现了一个简单，高效的ajax调用功能，不同的地方在于可以直接发送jsonp调用请求。

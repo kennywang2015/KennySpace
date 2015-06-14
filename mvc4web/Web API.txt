@@ -1,0 +1,169 @@
+﻿Web API 框架同事使用了web的标准规范，比如http，json，xml，一系列构建REST数据服务的参考原则。和mvc很像，都使用了相同的核心概念，
+比如路由、控制器以及控制器操作结果。
+场景不同：需要使用数据服务，而非HTML标签场景。
+
+构建DataService
+	添加新的WebAPI控制器，需要邮件点击要保存的文件夹（API）,选择控制器即可。选择“带有空的read/write操作的api控制器”模板，而非普通的mvc控制器模板。
+注册webapi路由
+	使用控制器，必须在asp.net路由里注册，否则无法接收请求消息。
+	基于mvc框架。webapi请求消息路由也是基于url的。唯一的区别wp使用的是RouteTable.MapHttpRoute()扩展方法，而不是RouteTable.MapRoute()
+	routes.MapHttpRoute(
+		name:"DefaultApi",
+		routeTemplate:"api/{controller}/{id}",
+		defaults: new {id=RouteParameter.Optional}
+	);
+	wp是使用惯例优先原则来查找正确的控制器操作方法。
+	
+依赖惯例优先原则
+	ApiController依赖名称来关联不同的HTTP操作，而不是使用HttpPostAttribute来标记不同的操作方法（mvc操作里是通过标记属性来控制请求方法映射的）
+	CRUP  Create、read、Update、Delete
+	
+	Get（读）
+	Put（更新）更新现有或者创建新的。
+	Post（创建）
+	Delete
+	
+PUT将会替换整个实体。为了支持部分更新，可以使用PATCH方法。
+
+调用wp数据服务非常简单。
+	$(function(){
+		$.getJSON("api/auction/"),
+		function(data){
+			$.each(data, function (key,val){
+				var str=val.Description;
+				$('<li/>',{html:str}).appendTo($('#auctions'));
+			});
+		}
+	});
+	
+	
+重写惯例
+	控制器命名惯例只适合那些名字包含标准HTTP动词（CURD）的控制器操作方法。
+	如果想使用别的名称并且想调用wp功能，使用AcceptVerbsAttribute标记属性或者HttpGetAttribute和HttpPostAttribute标记属性直接标记到wp的控制器方法上，
+	没有使用REST惯例GET，使用自定义FindAuction，为了实现Get请求，我们在FindAuction上标记。
+	[HttpGet]
+	public Auction FindAuction(int id)
+	{}
+	
+钩住API
+	为了访问数据库，AuctionsDataController构造函数需要接受数据持久化repository类的实例：
+	public class AuctionsDataController : ApiController
+	{
+		private readonly IRepository _respository;
+		public AuctionsDataController(IRepository repository)
+		{
+			_repository=repository;
+		}
+	}
+	默认情况下，wp控制器需要默认构造参数（空参数）。因为要传递IRepository给控制器，所以启动应用程序时需要初始化自定义依赖解析器：
+	GlobalConfiguration.Configuration.DependencyResolver=new NinjectWebApiResolver(kernel);
+	
+	使用Ninject Ioc容器的自定义依赖解析器。因为每个请求都要创建wp控制器，所以自定义依赖解析器需要为每个请求创建一个新的依赖域。
+	
+	using System.Web.Http.Dependencies;
+	using Ninject;
+	
+	public class NinjectWebApiResolver: NinjectWebApiScope, IdependencyResolver
+	{
+		private IKernel kernel;
+		
+		public NinjectWebApiResolver(IKernel kernel) : base (kernel)
+		{
+			this.kernel=kernel;
+		}
+		public IDependencyScope BeginScope()
+		{
+			return new NinjectWebApiScope(kernel.BeginBlock());
+		}
+	}
+	
+当请求wp控制器时，会调用GetService方法；当创建控制器实例时，Resolver()会注入repository。
+	public class NinjectWebApiScope: IDependencyScope
+	{
+		protected IResolutionRoot resolutionRoot;
+		
+		public NinjectWebApiScope(IResolutionRoot resolutionRoot)
+		{
+			this.resolutionRoot=resolutionRoot;
+		}
+		
+		public object GetService(Type serviceType)
+		{
+			return resolutionRoot.Resolver(this.CreateRequest(serviceType)).SingleOrDefault();
+		}
+		
+		public IEnumerable<boject> GetService(Type serviceType)
+		{
+			return resolutionRoot.Resolve(this.CreateRequest(serviceType));
+		}
+		
+		private IRequestCreateRequest(Type serviceType)
+		{
+			return resolutionRoot.CreateRequest(serviceType,
+					null,
+					new Parameter[0],
+					true,
+					true);
+					
+		}
+		
+		public void Dispose()
+		{
+			resolutionRoot=null;
+		}
+	}
+下面为Auctions类中执行crud操作的wp控制器完整代码：
+	public class AuctionsDataController : ApiController
+	{
+		private readonly IRepository _respository;
+		public AuctionsDataController(IRepository repository)
+		{
+			_repository=repository;
+		}
+		
+		public IEnumerable<Auction> Get()
+		{
+			return this._repository.All<Auction>();
+		}
+		
+		public Auction Get(string id)
+		{
+			return _repository.Single<Auction>(id);
+		}
+		
+		public void Post(Auction auction)
+		{
+			_repository.Add<Auction>(auction);
+		}
+		
+		public void Put(string id,Auction auction)
+		{
+			var currentAuction = _respository.Single<Auction>(id);
+			
+			if(currentAuction!=null)
+			{
+				currentAuction=Mapper.DynamicMap<Auction>(auction);
+			}
+		}
+		
+		public void Delete(string id)
+		{
+			_repository.Delete<Auction>(id);
+		}
+	}
+	
+	数据分页与查询
+		wp框架最强大的功能之一局势可以通过开发数据协议Open Data Protocol，OData使用url参数表达式来支持数据分页和过滤。
+		常见的查询参数 OData支持的查询字符串参数
+		$filter  过滤符合布尔条件的值   /api/Auction?$filter=CurrentBidgt
+		$orderby 返回根据特定字段排序的实体集合 /api/Auction?$orderby=Description
+		$skip	指定跳过的开始n个实体 /api/Auction?$skip=2
+		$top 返回开始n个实体 /api/Auction?$top=3&
+	
+	为了支持分页和过滤，wp控制器操作必须返回IQueryable<T>类型的结果。蛋数据没存储在IQueryable<T>对象中时，也可以使用AsQueryable() LINQ扩展方法。
+	wp会处理IQueryable<T>结果，并且把OData查询字符串转换为可以用来过滤IQueryable<T>数据的LINQ表达式。
+	wp会处理LINQ表达式的查询结果，并转换为JSON对象，这样就可以通过HTTP协议传输了。
+	public IQueryable<Auction> Get()
+	{
+		return _respository.All<Auction>().AsQueryable();
+	}
