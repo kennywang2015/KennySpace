@@ -167,3 +167,72 @@ PUT将会替换整个实体。为了支持部分更新，可以使用PATCH方法
 	{
 		return _respository.All<Auction>().AsQueryable();
 	}
+
+异常处理
+	若服务端的ajax请求出错，就会向客户端返回内部错误500。导致许多问题。首先告诉内部错误没有意义。其次，返回错误信息对开发人员没有帮助，不利于调试。最后有可能在其中有包含调用堆栈或其他攻击者可以利用的信息。
+wp提供了异常处理机制，可以返回更加合理的信息给客户端应用。
+public Auction Get(string id)
+{
+	var result = _repository.Single<Auction>(id);
+	if(result==null)
+	{
+		var errorMessage = new HttpResponseMessage(HttpStatusCode.NotFound);
+		errorMessage.Content=new StringContent(string.Format("Invalid id, no auction available for id:{0}",id));
+		errorMessage.ReasonPhrase="Not Found";
+
+		throw new HttpResponseException(errorMessage);
+	}
+
+	return result;
+}
+除了使用HttpReponseException外，wp还允许创建异常过滤器。异常过滤器可以处理控制器里非HttpResposeException类型的异常。
+直接继承System.Web.Http.Filters.IExceptionFilter接口或者ExceptionFilterAttribute。创建自定义标记属性也是一种创建异常过滤器的简单方法。
+要求重新OnException();
+
+using System.Diagnostics;
+using System.Web.Http.Filters;
+
+public class CustomExceptionFilter: ExceptionFilterAttribute
+{
+	public overide void OnException(HttpActionExcutedContext context)
+	{
+		base.OnException(context);
+	}
+}
+
+可以通过修改HttpActionExecutedContext参数来重写发给客户端的Http应答消息：
+
+public class CustomExceptionFilter: ExceptionFilterAttribute
+{
+	public overide void OnException(HttpActionExcutedContext context)
+	{
+		if(context.Response==null)
+		{
+			context.Response=new HttpResponseMessage();
+		}
+		context.Response.StatusCode=HttpStatusCode.NotImplemented;
+		context.Response.Content=new StringContent("Custom Message");
+		base.OnException(context);
+	}
+}
+创建之后，还要注册它才能使用。有两种注册方式：通过GlobalConfiguration.Configuration.Filters集合注册全局异常过滤器；在Wp控制器的操作方法上直接标记。全局异常过滤器会处理所有wp控制器抛出的异常，除了HttpResponseException以外。
+
+注册全局异常过滤器，只需要在程序启动阶段向GlobalConfiguration.Configuration.Filters集合添加即可。
+public class MvcApplication: System.Web.HttpApplication
+{
+	static void ConfigureApi(HttpConfiguration config)
+	{
+		config.Filters.Add(new CustomExceptionFilter());
+	}
+	protected void Application_Start()
+	{
+		ConfigureApi(GlobalConfiguration.Configuration);
+	}
+}
+也可以通过wp控制器方法直接标记自定义异常处理属性：
+[CustomExceptionFilter]
+
+除了命名空间以及行为上的少许差别以外，wp异常过滤器和mvc过滤器很像。例如mvc HandleErrorAttribute类不能处理wp控制器抛出的异常。
+
+
+Media格式化器 -150
