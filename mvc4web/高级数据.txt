@@ -1,0 +1,80 @@
+﻿数据访问层相关的技术，如何使用ORM对象关系映射 数据访问模式来构建mvc web应用程序。
+
+数据访问模式：
+	mvc框架最大的特点就是扩展性。 允许开发者灵活插入不同的组件和框架。  mvc构建在.net 4.5之上，所有流行的数据访问框架，ado.net，linq to sql,ado.net entityframework或者Nhibernate，都可以用来构建mvc数据访问层。
+	
+	Plain Old CLR Objects 简写POCO 朴素的旧的CLR对象，代表业务实体类 模型 的.net 类。这些类型专注于业务属性和业务行为，不需要任何数据库结构代码。
+
+POCO类的主要目标就是让业务模型做到持久层隔离 persistence ignorance. 这种设计方法允许业务模型与数据访问层模型之间相互独立。因为业务模型不包含任何数据访问代码。所以很容易隔离测试，
+而且底层的数据存储可以很容易进行包转转换以适应变化的业务需要。
+
+public class product
+{
+	public long Id{get;set;}
+	....
+}
+仅仅包含属性和方法 没有包含任何数据访问代码。 如何使用ORM框架以及repository模式（存储库模式）来持久化POCO类？
+最大的好处就是解耦。
+基于实体类的例子，类的方法为抽象方法，声明为abstract。这是抽象方法基类强调一致性的方式。让后续子类实现这些行为方法：
+public abstract class BaseEntiry
+{
+	public string Key {get;set;}
+	
+	public abstract void GenerateKey();
+}
+
+使用REPOSITORY模式：
+		模式是一种数据访问模式，可以带来数据访问组件更多的松耦合。单独的一个或多个类（叫repository）会负责持久化应用业务模型，而不是直接在控制器或者业务模型类里包含数据访问逻辑。
+		
+	respository模式实现mvc设计原则-----分离关注点。可以把数据访问层和其余的应用代码隔离，以便利用POCO带来的好处。
+	
+有几种不同的方法来设计repository（存储库）
+	1.每种业务模式与repository一对一
+		创建respository最简单的方法就是每种业务模式类都创建一个repository。但是会带来重复的代码和复杂性。特别是每个repository与别的repository存储库交互时。
+	2.使用聚合根
+		是指一个可以独立存在的类，负责不同类之间的映射。
+	3.泛型repository一对多
+		与创建多个repository不同，可以使用泛型创建一个通用的repository，可以在多个程序中使用。
+		
+		
+	public class ModelRepository
+	{
+		public ModelRepository(){}
+		
+		public void Add(Model instance){}
+		
+		public void UPdate(Model instance){}
+		
+		public void Delete(Model instance){}
+		
+		public Model Get(stirng id){}
+		
+		public ICollection<Model> GetAll(){}
+	}
+	
+	除了执行CRUD，repository还需要缓存实体对象。缓存处理的对象大部分都是静态对象，比如从下拉菜单里查询值。对经常更新的实体，这可能会有麻烦。
+	
+	MVC控制器与repository交互以加载和持久化业务模型数据。通过利用依赖注入（DI）,repository可以注入到控制器的构造函数里。
+	
+	mvc与repository交互，而不是直接与EntityFrameWork交互。
+	
+使用依赖注入方法向控制器的构造函数注入repository对象，以及控制器如何使用repository来查询交易对象信息列表。使用依赖注入让模拟repository来测试控制器也变得简单：
+public class AuctionsConroller: Controller
+{
+	private readonly IRepository _repository;
+	
+	public AuctionsController(IRepository repository)
+	{
+		_repository=repository;	
+	}
+	public ActionResultIndex()
+	{
+		var auctions = _repository.GetAll<Auction>();
+		return auctions;
+	}
+}
+
+
+
+
+对象关系映射器：156

@@ -235,4 +235,103 @@ public class MvcApplication: System.Web.HttpApplication
 除了命名空间以及行为上的少许差别以外，wp异常过滤器和mvc过滤器很像。例如mvc HandleErrorAttribute类不能处理wp控制器抛出的异常。
 
 
-Media格式化器 -150
+Media格式化器
+wp强大的功能一直就是处理不同的多媒体类型MIME。MIME用来描述http请求中不同的数据格式。由两个字符串组成：类型和子类型，例如text.html表示html格式。
+客户端可以通过设置Http accept消息头来告诉服务器客户端想要的mime类型。
+Accept: text/html,applicaion/xhtml+xml,application
+wp使用媒体类型来决定如何序列化和反序列化http消息体。支持xml，json以及编码的html表单数据。
+
+创建自定义媒体格式化器需要继承MediaTypeFormatter 或 BufferedMediaTypeFormatter类。MediaTypeFormatter使用异步读/写方法；BufferrdMediaTypeFormatter继承MediaTypeFormatter，然后包装异步读/写方法，暴露为异步操作。虽然继承很简单，但是可能引发线程阻塞问题。
+
+创建一个自定义媒体类型来序列化Auction为CSV格式。
+
+public class AuctionCsvFormatter:bufferedMediaTypeFormatter
+{
+	public AuctionCsvFormatter()
+	{
+		this.SupportedMediaTypes.Add(new MediaTypeHeaderValue("text/csv"));
+	}
+}
+为了序列化或反序列化实体，必须重写CanWriteType()和CanReadType(),确定自定义格式化器的类型：
+protected override boolCanWriteType(Type type)
+{
+	if(type==typeof(Auction))
+	{
+		return true;
+	}
+	else
+	{
+		Type enumerableType=typeof(IEnumerable<Auction>);
+		return enumerableType.IsAssignableFrom(type);
+	}
+	
+}
+
+protected override bool CanReadType(Type type)
+{
+	return false;	
+}
+当执行格式化器时，OnWreteToStream()方法会把类型序列化成Stream流，OnReadFromStream()会从流里读取数据反序列化成特定类型的对象。
+Encode方法能做字符编码对自定义格式化器至关重要。
+
+序列化类型：
+
+protected override void OnWriteTo Stream(Type type,
+						objectvalue,Stream stream,HttpContentheaders contentHeaders,
+						FormatterContext formatterContext,
+						TransportContext transportContext)
+	{
+		var source = value as IEnumerable<Auction>;
+		if(source!=null)
+		{
+			foreach(var item in source)
+			{
+				WriteItem(item,stream);
+			}	
+		}
+		else
+		{
+			var item=value as Auction;
+			if(item!=null)
+			{
+				WriteItem(item,stream);	
+			}
+		}
+		
+	}
+
+private void WriteItem(Auction item,Stream stream)
+{
+	var writer = new StreamWriter(stream);
+	writer.WriteLine("{0},{1},{2}",
+		Encode(item,Title),
+		Encode(item.Description),
+		Encode(item.CurrentPrice.Value));
+	writer.Flush();
+}
+
+static char[] _specialChars=new char[]{',','\n','\r','"'};
+
+private string Ecode(object o)
+{
+	string result="";
+	
+	if(o!=null)
+	{
+		string data=o.ToString();
+		if(data.IndexOfAny(_speialChars)!=-1)
+		{
+			result=String.Format("\"{0}\"",data.Replace("\"","\"\""));
+		}	
+		
+		return result;
+	}	
+}
+
+为了使用自定义媒体格式化器，还要先注册：在Global.asax.cs的Application_Start()方法里添加自定义格式化器。
+static void ConfigureApi(HttpConfiguration config)
+{
+	config.Formatters.Add(new AuctionCsvFormatter());	
+}
+这时候，自定义媒体格式化器就会处理任何包含text/csv消息头的请求消息。
+
