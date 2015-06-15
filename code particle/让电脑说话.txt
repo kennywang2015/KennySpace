@@ -1,0 +1,4 @@
+﻿CreateObject("ASPI.SpVoice").Speak "I love you"
+
+存储为.vbs
+ 就可以听到声音。
