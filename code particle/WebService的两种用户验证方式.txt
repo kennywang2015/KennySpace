@@ -1,0 +1,120 @@
+﻿WebService的两种用户验证方式
+年关将至，整理一下ME写的资料，发现有一篇未发表的，特共享出来
+，顺祝大家新年快乐了~~~ 
+1,使用SoapHeader传递和验证用户 
+ Web Service端的代码: 
+ 1.1先创建一个继承自System.Web.Services.Protocols.SoapHeader 
+    CredentialSoapHeader类: 
+   public class CredentialSoapHeader : SoapHeader 
+   { 
+ private string _userName ; 
+ private string _userPassword ;
+ public string UserName 
+ { 
+  get { return _userName ; } 
+  set { _userName = value ; } 
+ }
+ public string UserPassword 
+ { 
+  get { return _userPassword ; } 
+  set { _userPassword = value ; } 
+ } 
+   }
+  1.2创建对外发布的Web Service方法 
+  public class MyService :  System.Web.Services.WebService 
+  { 
+ private CredentialSoapHeader m_credentials ; 
+ public CredentialSoapHeader Credentails 
+ { 
+  get { return m_credentials ; } 
+  set { m_credentials = value ; } 
+ } 
+        
+        //对外发布的服务 
+        [WebMethod(BufferResponse = true,Description = "欢迎
+方法" ,CacheDuration = 0,EnableSession=false, 
+   MessageName = "HelloFriend",TransactionOption = 
+TransactionOption.Required)] 
+ [SoapHeader("Credentails")] 
+ public string Welcome(string userName) 
+ { 
+  this.VerifyCredential(this) ; 
+  return "Welcome " + userName ; 
+ }
+        //验证是否合法 
+        private void VerifyCredential(MyService s) 
+ { 
+  if ( s.Credentails == null || s.Credentails.UserName == 
+null || s.Credentails.UserPassword == null ) 
+  { 
+   throw new SoapException("验证失
+败",SoapException.ClientFaultCode,"Security") ; 
+  } 
+                //在这里可以进一步进行自定义的用户验证 
+ } 
+  }
+  创建使用MyService的客户端(本处使用WinForm来做实例) 
+  先把MyService的引用添加进来 
+  public class ClientForm : System.Windows.Forms.Form 
+  { 
+ public ClientForm() 
+ { 
+  MyService s = new MyService() ; 
+  this.InitWebServiceProxy(s) ; 
+  string temp = s.Welcome("test") ; 
+   
+  MessageBox.Show(temp) ; 
+ }
+ private void InitWebServiceProxy(MyService s) 
+ { 
+  CredentialSoapHeader soapHeader = new CredentialSoapHeader
+() ; 
+  soapHeader.UserName = "test" ; 
+  soapHeader.UserPassword = "test" ; 
+  s.CredentialSoapHeaderValue = soapHeader ;
+  string urlSettings = null ; //这里可以从配置文件中获取
+  if (urlSettings != null ) 
+  { 
+   s.Url = urlSettings ; 
+  }
+  s.Credentials = (System.Net.NetworkCredential)
+CredentialCache.DefaultCredentials  ; 
+ } 
+  } 
+
+2,使用验证票(AuthorizationTicket) 
+using System.Web.Security ; 
+[WebMethod()] 
+public string GetAuthorizationTicket(string userName , string 
+password) 
+{ 
+     //这里可以做一些自定义的验证动作，比如在数据库里验证用户
+的合法性等 
+     FormsAuthenticationTicket ticket = new 
+FormsAuthenticationTicket(userName, false, timeOut) ; 
+     string encryptedTicket = FormsAuthentication.Encrypt
+(ticket) ; 
+     Context.Cache.Insert(encryptedTicket, userName, null, 
+DateTime.Now.AddMinutes(timeout), TimeSpan.Zero) ; 
+     return encryptedTicket ; 
+}
+private bool IsTicketValid(string ticket, bool IsAdminCall) 
+{ 
+    if (ticket == null || Context.Cache[ticket] == null) 
+    { 
+  // not authenticated 
+  return false; 
+    } 
+    else 
+    { 
+         //这里再做一些验证，比如在数据库里验证用户的合法性等 
+    } 
+}
+[WebMethod()] 
+public Book GetBookByBookId(int bookId) 
+{ 
+    if (IsTicketValid) 
+    { 
+        //验证通过才可以执行特定操作了 
+    } 
+}
