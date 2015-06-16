@@ -113,6 +113,322 @@ public class AuctionsConroller: Controller
 数据库并发
 	处理并发冲突是web开发人员必须面对的问题。当多个用户同时修改相同的数据时，就会引起并发冲突问题。默认，除非配置ef检测冲突，大多使用“最后进入”规则，就是最后提交修改信息的用户将会其作用，将会覆盖先提交的修改数据。
 
-	159
+	保守式并发	需要数据库组织其他的用户重写别人提交的修改数据。当查询单行数据时，会加上只读锁，直到同一个用户更新完数据，或移除只读锁。这个会带来问题，因为web网站依赖于无状态模型。其中主要问题是何时移除锁。
+	
+	开放式并发
+	检查最新查询的数据是否被修改。最简单的实现就是在表中加一个最后更新的时间戳。
+	
+	EF不直接支持开放式，但是推荐使用开放式。ef提供给开放式有两种方法：给实体对象增加时间戳timestamp属性，以及处理ef数据上下文返回的optimisticConcurrencyException异常。
+	
+	添加时间戳属性给实体对象的例子。添加完毕后，任何数据操作都会自动在sql where语句中添加新的时间戳。
+	[Timesatmp]
+	public Byte[] Timestamp {get;set;}
+		
+	处理optimisticConcurrencyException异常，查询用户保存的实体对象的状态是否与数据库的状态一致：
+	try
+	{
+		dbContext.Set<Product>().Add(instance);
+		dbContext.SaveChanges();
+	}
+	catch(DbUpdateConcurrencyException ex)
+	{
+		var entry =ex.Entries.Single();
+		var databaseValues=(Product)entry.GetDatabaseValues().ToObject();
+		var clientValues=(Product)entry.Entity;
+		
+		if(databaseValues.Name!=clientValues.Name)
+		//记录并发异常日志
+	}
+	catch(DataException ex)
+	{
+		//记录数据异常日志
+	}
+	catch(Exception ex)
+	{
+		//记录普通异常日志
+	}
+
+
+
+领域驱动设计DDD以Domain域为关注点，而非实现技术，也就是关注Model模型设计。  驱动开发behavior-driven-development BDD
+			测试驱动开发test-driven-development TDD
+			
+使用持久化隔离方法来确保应用程序可以很容易支持多种类型的持久型模型、关系型数据库、云存储以及Nosql数据库。
+
+使用EF代码优先方法
+	代码有限可以使用POCO类。数据库优先和模型优先中，EF会从EntityObject基类继承模型类，并提供一些基础方法来把模型类映射到数据库schema上。因为数据库优先和模型优先需要持久化EntityObject子类，所以这些子类不支持持久化隔离机制。
+	
+	代码有限方法是使用惯例来映射POCO类，而不是使用实体基类：
+		1.表明使用多元化的窗体实体类名命名。
+		2.列名使用属性名称。
+		3.主键使用名为ID的属性或者类名ID。
+		4.默认的链接字符串匹配DataContext类名。
+		
+代码有限数据标记
+	mvc使用了一些相同的属性标记来做域成员级别的验证工作。
+	
+	代码有限数据标记
+	Column			列名称、序号位置和要映射到的属性的数据类型
+	ComplexType				在不包含键的类上使用。而且ef无法管理。通常用于管理相关实体中的标量属性。
+	ConcurrencyCheck		用于指定属性是否应该参与开放式并发检查。
+	DatabaseGenerated		用于标记应由数据库生成的属性。
+	ForeignKey			用于标识相关的实体，表示使用表之间的外键约束。
+	InverseProperty		用于标识该属性所标识关系的另一端对应属性
+	Key			唯一标识实体的一个或多个属性
+	MaxLength
+	MinLength		列最大最小属性
+	NotMapped		标记将不会由实体框架映射的属性
+	Required		标记必须属性
+	StringLength		域成员的最大最小长度
+	Table 			实体使用的表名称
+	Timestamp		时间戳的属性列，用于保存前的检查工作
+	
+	
+	重写惯例
+		使用惯例的主要目的是提升开发效率，但是ef意识到某些情况下需要打破惯例，所以提供了api允许开发修改默认设置的惯例规则
+		
+		使用Key标记属性的实体类的例子，重写了默认的主键：
+		public class Product
+		{
+			[Key]
+			public string MasterKey {get;set;}
+			public string Name {get;set;}
+		}
+		也可以删除或修改默认惯例
+		例子：删除PluralizingTablenameConvention表命名惯例，签名可以用在数据库表中：
+		public class ProductEntities: DbContext
+		{
+			protected override void OnModelCreating(DbModelBuilder modelBuilder)
+			{
+				//修改Code First惯例以便不使用PluralizingTablename
+				{
+					modelBuilder.Conventions.Remove<PluralizingTablenameConvention>();
+				}
+			}
+		}
+	
+
+	POCO类组成Ebuy交易网站。。使用是DDD。每个POCO实体类都继承自一个基实体类，这个基实体类包含所有业务模型类公共的行为和属性。
+	
+	使用了SOLID设计原则，实现了两个接口：一个是自定义的IEntity接口，为实体定义了以URL为键的命名原则；
+	另一个是.net的IEquatable接口，定义了不同实体对象的比较丰富的基类：
+	public interface IEntity
+	{
+		//唯一公开标识，通过web暴露的标识符
+		string key {get;}
+	}
+	public abstract class Entity<TId>: IEntity,IEquatable<Entity<TId>> where TId: struct
+	{
+		[Key]
+		public virtual TId Id
+		{
+			get
+			{
+				if(_id==null && typeof(TId) == typeof(Guid))
+				{
+					_id=Guid.NewGuid();
+				}
+				
+				return _id==null?default(TId):(TId) _id;
+				
+			}
+			
+			protected set {_id=value;}
+		}
+		private object _id;
+		
+		[Unique,StringLength(50)]
+		public virtual string Key
+		{
+			get{return _key=_key??GenerateKey():}
+			protected set{_key=value;}
+		}
+		private string _key;
+		
+		protected virtual string GenerateKey()
+		{
+			return KeyGenerator.Generate();
+		}
+		
+	}
+	
+	
+	继承自实体类的子类必须定义自己的ID。注意其他行为，比如保证Key属性包含唯一的值，且值必须是50个字符。另外，如果通过重写equal操作符来判断相同模型对象的等价关系。
+	
+	付款模型Payment继承Entity，使用基于GUID的标识符，包含基元类型和复杂类型的属性。复杂属性用来表示与其他模型之间的关系，例如Payment包含Auction和User对象的引用关系
+	
+	public class Payment:Entity<Guid>
+	{
+		public Currency Amount {get; private set;}
+		public Auction Auction{get; private set;}
+		public DateTime Timestamp{get;private set;}
+		public User User{get;set;}
+		
+		public Payment(User user,Auction auction,Currency amount)
+		{
+			User=user;
+			Auction=auction;
+			Amount=amount;
+			Timestamp=Clock.Now;
+		}
+		
+		
+	}
+	
+	使用域模型的关键就是要把模型分割成一个或多个上下文，每个上下文定义成聚合群集aggregate cluster。而每个聚合群集由多个作为单一逻辑单元协同工作的对象组成。
+	
+	EBuy的聚合根就是Auction类。表示应用程序中所有其他类必须使用的类。
+	和其他核心实体类的关系密切，
+	
+	ICollection<T>用来定义不同的相关类。
+	
+	public class Auction:Entity<Guid>
+	{
+		public virtual string Title{get;set;}
+		public virtual string Description{get;set;}
+		public virtual DateTime StartTime{get;set;}
+		public virtual DateTime EndTime{get;set;}
+		public virtual Currency CurrentPrice{get;set;}
+		
+		public Guid? WinningBidId{get;set;}
+		public virtual Bid WinningBid{get;private set;}
+		
+		public bool IsCompleted
+		{
+			get{return EndTime<=Clock.Now;}
+		}
+		
+		public virtual bool IsFeaturedAuction{get; private set;}
+		
+		public virtual ICollection<Category> Categories{get;set;}
+		
+		public virtual ICollection<Bid> Bids{get;set;}
+		
+		public virtual ICollection<WebsiteImage> Images{get;set;}
+		
+		public long OwnerId{get;set;}
+		
+		public virtual User Owner{get;set;}
+		
+		public virtual CurrencyCode CurrencyCode
+		{
+			get
+			{
+				return (CurrentPrice!=null )? CurrentPrice.Code:null;
+			}
+		}
+		
+		public Auction()
+		{
+			Bids=new Collection<Bid>();
+			Categories=new Collection<Category>():
+			Images=new Collection<WebsiteImage>();
+		}
+		
+		public void FeatureAuction()
+		{
+			IsFeaturedAuction=true;
+		}
+		
+		public Bid PostBid(User user,double bidAmount)
+		{
+			reutrn PostBid(user,new Currency(CurrencyCode,bidAmount));
+		}
+		
+		public Bid PostBid(User user,Currency bidAmount)
+		{
+			Contract.Requires(user!=null);
+			
+			if(bidAmount.Code!=CurrencyCode)
+				throw new InvalidBidException(bidAmount,WinningBid);
+				
+			if(bidAmount.Value<=CurrentPrice.Value)
+				throw new InvalidBidException(bidAmount,WinningBid);
+				
+			var bid=new Bid(user,this,bidAmount);
+			
+			CurrentPrice=bidAmount;
+			WinningBid=bid.Id;
+			
+			Bids.Add(bid);
+			
+			return bid;
+		}
+	}
+	
+使用数据上下文
+		ef代码优先方法需要创建继承自DbContext的数据访问上下文类。这个类包含领域模型里每个实体的属性。
+		自定义实体上下文类可以通过继承自实体上下文的基类来处理特定的查询和保存数据，也可以自定义一些实体映射的逻辑代码。
+		
+		Ef代码优先数据上下文包含两个实体类：类别Categories和产品Products。
+		下面是DataContext定义，使用LINQ来查询特定类别的产品。
+		
+		public partial class DataContext :DbContext
+		{
+			public DbSet<Category> Categories {get;set;}
+			
+			public DbSet<Product> Products{get;set;}
+		}
+
+		public IList<Product> GetProductsByCategory(Category item)
+		{
+			IList<Product> result =null;
+			
+			var db=new DataContext();
+			result = db.Products.Where(1=>q.Category.Equals(item)).ToList();
+			
+			reutrn result;
+		}
+
+为了处理实体多对多关系，需要重写数据上下文DataContext的onModelCreating()方法。
+		protected override void OnModelCreating(DbModeBuilder modelBuilder)
+		{
+			modelBuilder.Entity<Bid>()
+				.HasRequired(x=>x.Auction)
+				.WithMany()
+				.WillCascadeOnDelete(false);
+		}
+
+	默认，ef会在mvc的web.config中查找与自定义数据访问类一样的名字的链接字符串：
+	name="Ebuy.DataAccess.DataContext"
+
+
+可以使用repository模式实现IRepository接口的repository类，允许开发使用IOC容器注入repository到控制器中，而不是直接使用ef数据上下文。
+
+public class Repository :IRepository
+{
+	private readonly DbContext _context;
+	
+	public Repository(DbContext context)
+	{
+		_context=context;
+		_isSharedContext=isSharedContext;
+	}
+}
+
+
+
+
+
+为了支持排序、过滤、数据分页。EF使用Linq来与数据库交互。
+创建并根据ef数据上下文来调用linq。 比如调用ToList()来执行查询。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
